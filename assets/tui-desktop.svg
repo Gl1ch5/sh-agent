@@ -16,7 +16,7 @@
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13.5">
     <!-- HUD Box -->
     <text x="22" y="68" fill="#45475a">╭─ </text>
-    <text x="46" y="68" fill="#89dceb" font-weight="bold">⚡ shx</text>
+    <text x="46" y="68" fill="#89dceb" font-weight="bold">&gt;_ shx</text>
     <text x="102" y="68" fill="#6c7086">v0.2.0</text>
     <text x="158" y="68" fill="#45475a">──────────────────────────────────────────────╮</text>
 

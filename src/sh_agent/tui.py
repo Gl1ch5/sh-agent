@@ -204,9 +204,9 @@ def print_banner(
     box_w = max(32, min(w - 1, 62))
     inner = box_w - 4
 
-    title_plain = f"⚡ shx v{__version__}"
+    title_plain = f">_ shx v{__version__}"
     dash_count = max(1, box_w - len(title_plain) - 5)
-    top = f"{DARK}╭─{R} {BOLD}{CYAN}⚡ shx{R} {GRAY}v{__version__}{R} {DARK}{'─' * dash_count}╮{R}"
+    top = f"{DARK}╭─{R} {BOLD}{CYAN}>_ shx{R} {GRAY}v{__version__}{R} {DARK}{'─' * dash_count}╮{R}"
     bot = f"{DARK}╰{'─' * (box_w - 2)}╯{R}"
 
     lines = [top]
@@ -246,7 +246,7 @@ def render_action(parsed: ParsedAction, res: BashResult) -> None:
     color = colors.get(parsed.kind, BLUE)
 
     if res.cancelled:
-        dot, exit_tag = f"{YELLOW}⏸{R}", f" {YELLOW}прервано{R}"
+        dot, exit_tag = f"{YELLOW}||{R}", f" {YELLOW}прервано{R}"
     elif res.exit_code == 0:
         dot, exit_tag = f"{GREEN}✓{R}", ""
     else:
@@ -333,11 +333,11 @@ def run_onboarding(cfg: dict[str, Any]) -> dict[str, Any]:
             sync_error = str(e)
 
     if sync_error:
-        print(f"{YELLOW}⚠ Could not fetch /models:{R} {GRAY}{sync_error}{R}")
+        print(f"{YELLOW}! Could not fetch /models:{R} {GRAY}{sync_error}{R}")
         manual = session.prompt(HTML("<b><ansicyan>Fallback Model ID</ansicyan></b> (e.g. gpt-4o-mini): ")).strip()
         models = [manual or "gpt-4o-mini"]
     elif not models:
-        print(f"{YELLOW}⚠ Endpoint returned 0 models.{R}")
+        print(f"{YELLOW}! Endpoint returned 0 models.{R}")
         manual = session.prompt(HTML("<b><ansicyan>Model ID</ansicyan></b>: ")).strip()
         models = [manual or "default"]
 

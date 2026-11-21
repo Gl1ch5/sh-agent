@@ -34,7 +34,7 @@ from .updater import check_latest_version, self_update
 
 
 def _ask_supplement(steer_session: PromptSession) -> str | None:
-    print(f"{DARK}│{R} {YELLOW}⏸ Прервано (история сохранена){R}")
+    print(f"{DARK}│{R} {YELLOW}|| Прервано (история сохранена){R}")
     try:
         text = steer_session.prompt(
             HTML("<b><ansiyellow>↳ Дополнить</ansiyellow></b> <ansibrightblack>(Enter — стоп)</ansibrightblack>: ")
@@ -106,7 +106,7 @@ def _run_turn(
             if res is not None and res.content.strip():
                 messages.append({"role": "assistant", "content": res.content})
             if steer_session is None:
-                print(f"{YELLOW}⏸ Прервано{R}\n")
+                print(f"{YELLOW}|| Прервано{R}\n")
                 return
             supplement = _ask_supplement(steer_session)
             if supplement:
@@ -169,7 +169,7 @@ def _run_turn(
 
         if cancelled_mid_tools:
             if steer_session is None:
-                print(f"{YELLOW}⏸ Прервано{R}\n")
+                print(f"{YELLOW}|| Прервано{R}\n")
                 return
             supplement = _ask_supplement(steer_session)
             if supplement:

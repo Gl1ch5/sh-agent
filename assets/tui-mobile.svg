@@ -11,7 +11,7 @@
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5">
     <text x="18" y="68" fill="#45475a">╭─ </text>
-    <text x="40" y="68" fill="#89dceb" font-weight="bold">⚡ shx</text>
+    <text x="40" y="68" fill="#89dceb" font-weight="bold">&gt;_ shx</text>
     <text x="90" y="68" fill="#6c7086">v0.2.0</text>
     <text x="142" y="68" fill="#45475a">────────────────────╮</text>
 
@@ -47,7 +47,7 @@
 
     <!-- Interrupt & supplement -->
     <text x="18" y="304" fill="#45475a">│</text>
-    <text x="32" y="304" fill="#f9e2af">⏸ Прервано (история сохранена)</text>
+    <text x="32" y="304" fill="#f9e2af">|| Прервано (история сохранена)</text>
     <text x="18" y="326" fill="#f9e2af" font-weight="bold">↳ Дополнить</text>
     <text x="108" y="326" fill="#6c7086">(Enter — стоп):</text>
     <text x="234" y="326" fill="#cdd6f4">pidof</text>
