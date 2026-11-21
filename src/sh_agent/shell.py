@@ -5,6 +5,7 @@ import re
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -149,7 +150,11 @@ def _build_shell_argv(command: str) -> list[str]:
     return ["sh", "-c", command]
 
 
-def run_bash(command: str, timeout: float = 120.0) -> BashResult:
+def run_bash(
+    command: str,
+    timeout: float = 120.0,
+    cancel_event: threading.Event | None = None,
+) -> BashResult:
     t0 = time.perf_counter()
     argv = _build_shell_argv(command)
 
@@ -164,10 +169,46 @@ def run_bash(command: str, timeout: float = 120.0) -> BashResult:
         popen_kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(argv, **popen_kwargs)
+    chunks: list[str] = []
+
+    def _reader() -> None:
+        assert proc.stdout is not None
+        try:
+            chunks.append(proc.stdout.read())
+        except Exception:
+            pass
+
+    rt = threading.Thread(target=_reader, daemon=True)
+    rt.start()
+
     try:
-        out, _ = proc.communicate(timeout=timeout)
+        while proc.poll() is None:
+            if cancel_event and cancel_event.is_set():
+                _kill_proc_tree(proc)
+                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                return BashResult(
+                    output="Cancelled by user.",
+                    exit_code=130,
+                    elapsed_ms=elapsed_ms,
+                    lines=0,
+                    bytes_count=0,
+                    cancelled=True,
+                )
+            if (time.perf_counter() - t0) > timeout:
+                _kill_proc_tree(proc)
+                elapsed_ms = int((time.perf_counter() - t0) * 1000)
+                return BashResult(
+                    output=f"Command timed out after {int(timeout)}s.",
+                    exit_code=124,
+                    elapsed_ms=elapsed_ms,
+                    lines=0,
+                    bytes_count=0,
+                )
+            time.sleep(0.03)
+
+        rt.join(timeout=1.0)
         elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        raw = out or ""
+        raw = "".join(chunks)
         n_lines = raw.count("\n") + (1 if raw and not raw.endswith("\n") else 0)
         n_bytes = len(raw.encode("utf-8"))
         return BashResult(
@@ -187,16 +228,6 @@ def run_bash(command: str, timeout: float = 120.0) -> BashResult:
             lines=0,
             bytes_count=0,
             cancelled=True,
-        )
-    except subprocess.TimeoutExpired:
-        _kill_proc_tree(proc)
-        elapsed_ms = int((time.perf_counter() - t0) * 1000)
-        return BashResult(
-            output=f"Command timed out after {int(timeout)}s.",
-            exit_code=124,
-            elapsed_ms=elapsed_ms,
-            lines=0,
-            bytes_count=0,
         )
 
 

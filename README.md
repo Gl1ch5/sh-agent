@@ -14,7 +14,7 @@
 **Bash-only, ultra-economical AI agent.**  
 ~70 tokens fixed prefix · Custom Python ANSI TUI · Live OpenRouter cost tracking · Instant `Esc`/`Ctrl+C` steer · Auto-update.
 
-[![Version](https://img.shields.io/badge/version-0.2.0-89dceb.svg)](version.json)
+[![Version](https://img.shields.io/badge/version-0.3.0-89dceb.svg)](version.json)
 [![License: MIT](https://img.shields.io/badge/License-MIT-a6e3a1.svg)](LICENSE)
 [![Python 3.9+](https://img.shields.io/badge/Python-3.9+-89b4fa.svg)](https://www.python.org/)
 [![Prefix](https://img.shields.io/badge/Fixed%20Prefix-~70%20tokens-fab387.svg)](#token-economy--live-pricing)

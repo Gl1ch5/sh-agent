@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -39,6 +40,8 @@ def stream_chat(
     messages: list[dict[str, Any]],
     on_first_event: Callable[[], None] | None = None,
     on_token: Callable[[str], None] | None = None,
+    cancel_event: threading.Event | None = None,
+    on_response: Callable[[httpx.Response], None] | None = None,
 ) -> StreamResult:
     url = f"{normalize_base_url(base_url)}/chat/completions"
     headers = {
@@ -77,7 +80,9 @@ def stream_chat(
                         f"HTTP {resp.status_code}: {body_text[:400]}", request=resp.request, response=resp
                     )
 
-                return _consume_sse(resp, t0, on_first_event, on_token)
+                if on_response:
+                    on_response(resp)
+                return _consume_sse(resp, t0, on_first_event, on_token, cancel_event)
 
     return StreamResult()
 
@@ -87,6 +92,7 @@ def _consume_sse(
     t0: float,
     on_first_event: Callable[[], None] | None,
     on_token: Callable[[str], None] | None,
+    cancel_event: threading.Event | None = None,
 ) -> StreamResult:
     res = StreamResult()
     tc_map: dict[int, dict[str, Any]] = {}
@@ -102,6 +108,9 @@ def _consume_sse(
 
     try:
         for line in resp.iter_lines():
+            if cancel_event and cancel_event.is_set():
+                res.cancelled = True
+                break
             if not line or not line.startswith("data:"):
                 continue
             raw = line[5:].strip()
@@ -146,8 +155,11 @@ def _consume_sse(
                         entry["function"]["name"] += fn["name"]
                     if fn.get("arguments"):
                         entry["function"]["arguments"] += fn["arguments"]
-    except KeyboardInterrupt:
-        res.cancelled = True
+    except (KeyboardInterrupt, Exception):
+        if cancel_event and cancel_event.is_set():
+            res.cancelled = True
+        else:
+            raise
 
     if not first_seen:
         mark_first()
