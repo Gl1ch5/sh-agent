@@ -48,7 +48,9 @@ def _run_turn(
     first_ttft = 0
 
     while True:
-        status = console.status(f"[bright_green]Thinking ({model})...[/bright_green]", spinner="dots")
+        short_model = model.split("/")[-1] if "/" in model else model
+        think_msg = f"Thinking · {short_model}"[: max(12, console.width - 6)]
+        status = console.status(f"[cyan]{think_msg}[/cyan]", spinner="dots")
         status.start()
         streamed_any_text = False
 
@@ -117,7 +119,11 @@ def _run_turn(
             cmd = str(args.get("command", ""))
             parsed = parse_bash_action(cmd)
 
-            with console.status(f"[bright_yellow]⚡ {parsed.kind}: {parsed.target}[/bright_yellow]", spinner="arc"):
+            spin_txt = f"{parsed.kind} · {parsed.target}"
+            max_spin = max(16, console.width - 6)
+            if len(spin_txt) > max_spin:
+                spin_txt = spin_txt[: max_spin - 1] + "…"
+            with console.status(f"[dim]{spin_txt}[/dim]", spinner="dots"):
                 b_res = run_bash(cmd)
 
             render_action_line(console, parsed, b_res)

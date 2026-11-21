@@ -59,51 +59,67 @@ class SlashCompleter(Completer):
                 )
 
 
+def _fit(text: str, max_len: int) -> str:
+    if max_len <= 4:
+        return text[:max_len]
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 1] + "…"
+
+
+def _fmt_ms(ms: int) -> str:
+    if ms >= 1000:
+        return f"{ms / 1000:.1f}s"
+    return f"{ms}ms"
+
+
 def print_banner(console: Console, provider_name: str | None = None, model: str | None = None) -> None:
+    w = console.width
     title = Text()
-    title.append("❯_ shx ", style="bold bright_green")
-    title.append("· bash-only ultra-economical agent", style="dim")
+    title.append("❯_ shx ", style="bold bright_cyan")
+    title.append("· bash agent", style="dim")
     cwd_name = Path.cwd().name or str(Path.cwd())
     if provider_name and model:
-        subtitle = (
-            f"[bright_magenta]{provider_name}[/bright_magenta] "
-            f"[bright_white]{model}[/bright_white]  "
-            f"[dim]│  📁 {cwd_name}  │  / cmds · Ctrl+C cancel[/dim]"
-        )
+        short_model = model.split("/")[-1] if w < 64 and "/" in model else model
+        info = _fit(f"{provider_name} · {short_model} · {cwd_name}", max(20, w - 8))
+        subtitle = f"[bright_white]{info}[/bright_white]\n[dim]/ commands · Ctrl+C cancel[/dim]"
     else:
-        subtitle = "[dim]first-time setup · custom OpenAI-compatible provider[/dim]"
-    console.print(Panel.fit(f"{title.markup}\n{subtitle}", border_style="bright_green", padding=(0, 2)))
+        subtitle = "[dim]first-time setup · custom provider[/dim]"
+    console.print(Panel.fit(f"{title.markup}\n{subtitle}", border_style="cyan", padding=(0, 2)))
 
 
 def render_action_line(console: Console, parsed: ParsedAction, res: BashResult) -> None:
+    w = console.width
     icons = {
-        "write": ("✎ write", "bright_green"),
-        "read": ("◉ read ", "bright_cyan"),
-        "grep": ("⌕ grep ", "bright_magenta"),
-        "find": ("⌕ find ", "bright_magenta"),
-        "bash": ("⚡ bash ", "bright_yellow"),
+        "write": ("write", "bright_green"),
+        "read": ("read", "bright_cyan"),
+        "grep": ("grep", "bright_magenta"),
+        "find": ("find", "bright_magenta"),
+        "bash": ("bash", "bright_blue"),
     }
-    label, color = icons.get(parsed.kind, ("⚡ bash ", "bright_yellow"))
+    label, color = icons.get(parsed.kind, ("bash", "bright_blue"))
 
     if res.cancelled:
-        status_str = "[yellow]⏹ cancelled[/yellow]"
+        badge = "[yellow]⏹[/yellow]"
+        exit_tag = " [yellow]cancelled[/yellow]"
     elif res.exit_code == 0:
-        status_str = f"[green]✓ 0[/green]"
+        badge = "[bright_green]✓[/bright_green]"
+        exit_tag = ""
     else:
-        status_str = f"[red]✗ {res.exit_code}[/red]"
+        badge = "[red]✗[/red]"
+        exit_tag = f" [red]exit {res.exit_code}[/red]"
 
     meta_parts: list[str] = []
     if parsed.detail:
         meta_parts.append(parsed.detail)
     elif res.lines > 0 and parsed.kind in ("read", "grep", "find"):
         meta_parts.append(f"{res.lines}L")
-    meta_parts.append(f"{res.elapsed_ms}ms")
+    meta_parts.append(_fmt_ms(res.elapsed_ms))
     meta = " · ".join(meta_parts)
 
-    console.print(
-        f"[{color}]{label}[/{color}]  [bright_white]{parsed.target}[/bright_white]  "
-        f"[dim]({meta})[/dim]  {status_str}"
-    )
+    target_line = _fit(parsed.target, max(16, w - 6))
+    console.print(f"  {badge} [{color}]{label}[/{color}]{exit_tag} [dim]· {meta}[/dim]")
+    console.print(f"    [dim]{target_line}[/dim]")
 
 
 def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
