@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import os
+import select
+import signal
+import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -12,9 +17,8 @@ from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.styles import Style
 from rich.console import Console
-from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
-from rich.text import Text
+from rich.rule import Rule
 
 from .config import (
     default_provider_name,
@@ -34,13 +38,69 @@ SLASH_COMMANDS: list[tuple[str, str]] = [
 PROMPT_STYLE = Style.from_dict(
     {
         "completion-menu.completion": "bg:#181825 #cdd6f4",
-        "completion-menu.completion.current": "bg:#a6e3a1 #11111b bold",
+        "completion-menu.completion.current": "bg:#89b4fa #11111b bold",
         "completion-menu.meta.completion": "bg:#181825 #6c7086",
-        "completion-menu.meta.completion.current": "bg:#a6e3a1 #11111b",
+        "completion-menu.meta.completion.current": "bg:#89b4fa #11111b",
         "scrollbar.background": "bg:#181825",
         "scrollbar.button": "bg:#45475a",
     }
 )
+
+
+class EscInterruptWatcher:
+    """Watches for bare Esc on POSIX TTY and raises SIGINT for instant cancellation."""
+
+    def __init__(self) -> None:
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._fd: int | None = None
+        self._old_term: Any = None
+
+    def __enter__(self) -> "EscInterruptWatcher":
+        if os.name == "posix" and sys.stdin.isatty():
+            try:
+                import termios
+                import tty
+
+                self._fd = sys.stdin.fileno()
+                self._old_term = termios.tcgetattr(self._fd)
+                tty.setcbreak(self._fd)
+                self._thread = threading.Thread(target=self._run, daemon=True)
+                self._thread.start()
+            except Exception:
+                self._fd = None
+                self._old_term = None
+        return self
+
+    def _run(self) -> None:
+        assert self._fd is not None
+        while not self._stop.is_set():
+            try:
+                r, _, _ = select.select([self._fd], [], [], 0.08)
+                if not r:
+                    continue
+                ch = os.read(self._fd, 1)
+                if ch == b"\x1b":
+                    r2, _, _ = select.select([self._fd], [], [], 0.03)
+                    if r2:
+                        os.read(self._fd, 16)
+                        continue
+                    os.kill(os.getpid(), signal.SIGINT)
+                    return
+            except Exception:
+                return
+
+    def __exit__(self, *args: Any) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=0.2)
+        if self._fd is not None and self._old_term is not None:
+            try:
+                import termios
+
+                termios.tcsetattr(self._fd, termios.TCSADRAIN, self._old_term)
+            except Exception:
+                pass
 
 
 class SlashCompleter(Completer):
@@ -75,17 +135,17 @@ def _fmt_ms(ms: int) -> str:
 
 def print_banner(console: Console, provider_name: str | None = None, model: str | None = None) -> None:
     w = console.width
-    title = Text()
-    title.append("❯_ shx ", style="bold bright_cyan")
-    title.append("· bash agent", style="dim")
     cwd_name = Path.cwd().name or str(Path.cwd())
+    console.print()
     if provider_name and model:
         short_model = model.split("/")[-1] if w < 64 and "/" in model else model
-        info = _fit(f"{provider_name} · {short_model} · {cwd_name}", max(20, w - 8))
-        subtitle = f"[bright_white]{info}[/bright_white]\n[dim]/ commands · Ctrl+C cancel[/dim]"
+        head = _fit(f"{short_model} · {provider_name}", max(18, w - 10))
+        sub = _fit(f"{cwd_name} · / cmds · Esc/Ctrl+C стоп", max(18, w - 4))
+        console.print(f"[bold bright_cyan]❯_ shx[/bold bright_cyan]  [bright_white]{head}[/bright_white]")
+        console.print(f"[dim]   {sub}[/dim]")
     else:
-        subtitle = "[dim]first-time setup · custom provider[/dim]"
-    console.print(Panel.fit(f"{title.markup}\n{subtitle}", border_style="cyan", padding=(0, 2)))
+        console.print("[bold bright_cyan]❯_ shx[/bold bright_cyan]  [dim]bash agent · setup[/dim]")
+    console.print(Rule(style="dim cyan"))
 
 
 def render_action_line(console: Console, parsed: ParsedAction, res: BashResult) -> None:
@@ -100,13 +160,13 @@ def render_action_line(console: Console, parsed: ParsedAction, res: BashResult) 
     label, color = icons.get(parsed.kind, ("bash", "bright_blue"))
 
     if res.cancelled:
-        badge = "[yellow]⏹[/yellow]"
-        exit_tag = " [yellow]cancelled[/yellow]"
+        dot = "[yellow]⏸[/yellow]"
+        exit_tag = " [yellow]прервано[/yellow]"
     elif res.exit_code == 0:
-        badge = "[bright_green]✓[/bright_green]"
+        dot = "[bright_green]●[/bright_green]"
         exit_tag = ""
     else:
-        badge = "[red]✗[/red]"
+        dot = "[red]●[/red]"
         exit_tag = f" [red]exit {res.exit_code}[/red]"
 
     meta_parts: list[str] = []
@@ -117,13 +177,19 @@ def render_action_line(console: Console, parsed: ParsedAction, res: BashResult) 
     meta_parts.append(_fmt_ms(res.elapsed_ms))
     meta = " · ".join(meta_parts)
 
-    target_line = _fit(parsed.target, max(16, w - 6))
-    console.print(f"  {badge} [{color}]{label}[/{color}]{exit_tag} [dim]· {meta}[/dim]")
-    console.print(f"    [dim]{target_line}[/dim]")
+    target_line = _fit(parsed.target, max(16, w - 7))
+    console.print(f"[dim]│[/dim] {dot} [{color}]{label}[/{color}]{exit_tag} [dim]· {meta}[/dim]")
+    console.print(f"[dim]│   {target_line}[/dim]")
+
+    if res.exit_code != 0 and not res.cancelled and res.output and res.output != "(no output)":
+        first_err = next((ln.strip() for ln in res.output.splitlines() if ln.strip()), "")
+        if first_err:
+            err_line = _fit(first_err, max(16, w - 9))
+            console.print(f"[dim]│[/dim]   [red]↳ {err_line}[/red]")
 
 
 def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
-    console.print("\n[bold bright_green]Add Custom OpenAI-Compatible Provider[/bold bright_green]")
+    console.print("\n[bold bright_cyan]Add Custom OpenAI-Compatible Provider[/bold bright_cyan]")
     console.print("[dim]Enter endpoint, key, and name — models sync automatically.[/dim]\n")
 
     session = PromptSession()
@@ -131,7 +197,7 @@ def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
     try:
         while True:
             raw_url = session.prompt(
-                HTML("<b><ansigreen>1/3 API URL</ansigreen></b> <ansibrightblack>(e.g. https://api.openai.com/v1)</ansibrightblack>: ")
+                HTML("<b><ansicyan>1/3 API URL</ansicyan></b> <ansibrightblack>(e.g. https://api.openai.com/v1)</ansibrightblack>: ")
             ).strip()
             if raw_url:
                 base_url = normalize_base_url(raw_url)
@@ -139,14 +205,14 @@ def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
             console.print("[red]API URL is required.[/red]")
 
         api_key = session.prompt(
-            HTML("<b><ansigreen>2/3 API Key</ansigreen></b> <ansibrightblack>(hidden, Enter if local)</ansibrightblack>: "),
+            HTML("<b><ansicyan>2/3 API Key</ansicyan></b> <ansibrightblack>(hidden, Enter if local)</ansibrightblack>: "),
             is_password=True,
         ).strip()
 
         suggested = default_provider_name(base_url)
         name = (
             session.prompt(
-                HTML(f"<b><ansigreen>3/3 Provider Name</ansigreen></b> <ansibrightblack>[{suggested}]</ansibrightblack>: ")
+                HTML(f"<b><ansicyan>3/3 Provider Name</ansicyan></b> <ansibrightblack>[{suggested}]</ansibrightblack>: ")
             ).strip()
             or suggested
         )
@@ -158,13 +224,13 @@ def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
     sync_error: str | None = None
 
     with Progress(
-        SpinnerColumn("dots", style="bright_green"),
+        SpinnerColumn("dots", style="bright_cyan"),
         TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=24, complete_style="bright_green", finished_style="green"),
+        BarColumn(bar_width=20, complete_style="bright_cyan", finished_style="green"),
         console=console,
         transient=True,
     ) as progress:
-        task = progress.add_task(f"Syncing models from {name}...", total=100)
+        task = progress.add_task(f"Syncing {name}...", total=100)
         progress.update(task, advance=35)
         try:
             models = fetch_models(base_url, api_key)
@@ -175,11 +241,11 @@ def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
 
     if sync_error:
         console.print(f"[yellow]⚠ Could not fetch /models:[/yellow] [dim]{sync_error}[/dim]")
-        manual = session.prompt(HTML("<b><ansigreen>Fallback Model ID</ansigreen></b> (e.g. gpt-4o-mini): ")).strip()
+        manual = session.prompt(HTML("<b><ansicyan>Fallback Model ID</ansicyan></b> (e.g. gpt-4o-mini): ")).strip()
         models = [manual or "gpt-4o-mini"]
     elif not models:
         console.print("[yellow]⚠ Endpoint returned 0 models.[/yellow]")
-        manual = session.prompt(HTML("<b><ansigreen>Model ID</ansigreen></b>: ")).strip()
+        manual = session.prompt(HTML("<b><ansicyan>Model ID</ansicyan></b>: ")).strip()
         models = [manual or "default"]
 
     active_model = models[0]
@@ -194,7 +260,7 @@ def run_onboarding(console: Console, cfg: dict[str, Any]) -> dict[str, Any]:
     save_config(cfg)
 
     console.print(
-        f"[green]✓[/green] Saved [bold]{name}[/bold] · Synced [bold]{len(models)}[/bold] model(s) · Active: [bright_green]{active_model}[/bright_green]\n"
+        f"[green]✓[/green] [bold]{name}[/bold] · {len(models)} model(s) · Active: [bright_cyan]{active_model}[/bright_cyan]\n"
     )
     return cfg["providers"][name]
 
@@ -223,7 +289,7 @@ def pick_model(models: list[str], current_model: str) -> str | None:
             state["idx"] = 0
 
         lines: list[tuple[str, str]] = [
-            ("class:header", f" Select model ({len(items)}/{len(models)})  filter: {state['query'] or 'type to filter…'}\n"),
+            ("class:header", f" Model ({len(items)}/{len(models)})  filter: {state['query'] or 'type to filter…'}\n"),
             ("class:hint", " ↑/↓ move · Enter select · Esc cancel\n"),
         ]
         max_rows = 12
@@ -279,9 +345,9 @@ def pick_model(models: list[str], current_model: str) -> str | None:
 
     style = Style.from_dict(
         {
-            "header": "bold ansigreen",
+            "header": "bold ansicyan",
             "hint": "ansibrightblack",
-            "selected": "bold reverse ansigreen",
+            "selected": "bold reverse ansicyan",
             "item": "ansiwhite",
             "dim": "ansibrightblack",
         }

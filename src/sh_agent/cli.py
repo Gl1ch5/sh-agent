@@ -14,6 +14,7 @@ from .config import get_active_provider, load_config, save_config
 from .shell import SYSTEM_PROMPT, parse_bash_action, run_bash
 from .ui import (
     PROMPT_STYLE,
+    EscInterruptWatcher,
     SlashCompleter,
     pick_model,
     print_banner,
@@ -29,19 +30,31 @@ def _format_stats(ttft_ms: int, prompt_tok: int, cached_tok: int, comp_tok: int)
         parts.append(f"{prompt_tok:,} in ({pct}% cached)")
     if comp_tok > 0:
         parts.append(f"{comp_tok:,} out")
-    return "▸ " + " · ".join(parts)
+    return "  " + " · ".join(parts)
+
+
+def _ask_supplement(console: Console, steer_session: PromptSession) -> str | None:
+    """Prompt inline after an interrupt: typing supplements & continues, empty Enter stops."""
+    console.print("[dim]│[/dim] [yellow]⏸ Прервано (история сохранена)[/yellow]")
+    try:
+        text = steer_session.prompt(
+            HTML("<b><ansiyellow>↳ Дополнить</ansiyellow></b> <ansibrightblack>(Enter — стоп)</ansibrightblack>: ")
+        ).strip()
+        return text or None
+    except (KeyboardInterrupt, EOFError):
+        return None
 
 
 def _run_turn(
     console: Console,
     provider: dict[str, Any],
     messages: list[dict[str, Any]],
+    steer_session: PromptSession | None = None,
 ) -> None:
     model = provider["active_model"]
     base_url = provider["base_url"]
     api_key = provider.get("api_key", "")
 
-    saved_len = len(messages)
     total_prompt = 0
     total_cached = 0
     total_comp = 0
@@ -61,26 +74,27 @@ def _run_turn(
             nonlocal streamed_any_text
             if not streamed_any_text:
                 streamed_any_text = True
+                sys.stdout.write("\n")
             sys.stdout.write(delta)
             sys.stdout.flush()
 
+        interrupted = False
+        res = None
+
         try:
-            res = stream_chat(
-                base_url=base_url,
-                api_key=api_key,
-                model=model,
-                messages=messages,
-                on_first_event=on_first,
-                on_token=on_token,
-            )
+            with EscInterruptWatcher():
+                res = stream_chat(
+                    base_url=base_url,
+                    api_key=api_key,
+                    model=model,
+                    messages=messages,
+                    on_first_event=on_first,
+                    on_token=on_token,
+                )
         except KeyboardInterrupt:
-            status.stop()
-            del messages[saved_len - 1 :]
-            console.print("\n[yellow]⏹ Cancelled[/yellow]\n")
-            return
+            interrupted = True
         except Exception as e:
             status.stop()
-            del messages[saved_len - 1 :]
             console.print(f"\n[red]✗ API error:[/red] {e}\n")
             return
         finally:
@@ -90,11 +104,21 @@ def _run_turn(
             sys.stdout.write("\n")
             sys.stdout.flush()
 
-        if res.cancelled:
-            del messages[saved_len - 1 :]
-            console.print("[yellow]⏹ Cancelled[/yellow]\n")
+        if interrupted or (res is not None and res.cancelled):
+            # Preserve any partial assistant text already streamed so the chain stays coherent
+            if res is not None and res.content.strip():
+                messages.append({"role": "assistant", "content": res.content})
+            if steer_session is None:
+                console.print("[yellow]⏸ Прервано[/yellow]\n")
+                return
+            supplement = _ask_supplement(console, steer_session)
+            if supplement:
+                messages.append({"role": "user", "content": supplement})
+                continue
+            console.print()
             return
 
+        assert res is not None
         if first_ttft == 0:
             first_ttft = res.ttft_ms
         total_prompt += res.prompt_tokens
@@ -109,7 +133,8 @@ def _run_turn(
         if not res.tool_calls:
             break
 
-        for tc in res.tool_calls:
+        cancelled_mid_tools = False
+        for idx, tc in enumerate(res.tool_calls):
             fn = tc.get("function") or {}
             raw_args = fn.get("arguments", "{}")
             try:
@@ -123,22 +148,44 @@ def _run_turn(
             max_spin = max(16, console.width - 6)
             if len(spin_txt) > max_spin:
                 spin_txt = spin_txt[: max_spin - 1] + "…"
-            with console.status(f"[dim]{spin_txt}[/dim]", spinner="dots"):
-                b_res = run_bash(cmd)
+
+            with EscInterruptWatcher():
+                with console.status(f"[dim]{spin_txt}[/dim]", spinner="dots"):
+                    b_res = run_bash(cmd)
 
             render_action_line(console, parsed, b_res)
 
             messages.append(
                 {
                     "role": "tool",
-                    "tool_call_id": tc.get("id") or "call_0",
+                    "tool_call_id": tc.get("id") or f"call_{idx}",
                     "content": f"[exit {b_res.exit_code}]\n{b_res.output}",
                 }
             )
 
             if b_res.cancelled:
-                console.print("[yellow]⏹ Turn cancelled[/yellow]\n")
+                # Keep OpenAI tool_call chain valid for any remaining unexecuted tool_calls
+                for rem_idx, rem_tc in enumerate(res.tool_calls[idx + 1 :], start=idx + 1):
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": rem_tc.get("id") or f"call_{rem_idx}",
+                            "content": "[interrupted by user]",
+                        }
+                    )
+                cancelled_mid_tools = True
+                break
+
+        if cancelled_mid_tools:
+            if steer_session is None:
+                console.print("[yellow]⏸ Прервано[/yellow]\n")
                 return
+            supplement = _ask_supplement(console, steer_session)
+            if supplement:
+                messages.append({"role": "user", "content": supplement})
+                continue
+            console.print()
+            return
 
     console.print(f"[dim]{_format_stats(first_ttft, total_prompt, total_cached, total_comp)}[/dim]\n")
 
@@ -148,7 +195,7 @@ def main() -> None:
 
     if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
         console.print(
-            "[bold bright_green]shx[/bold bright_green] — bash-only ultra-economical AI agent\n\n"
+            "[bold bright_cyan]shx[/bold bright_cyan] — bash-only ultra-economical AI agent\n\n"
             "[bold]Usage:[/bold]\n"
             "  shx             Launch interactive agent\n"
             "  shx \"<prompt>\"  Run one-shot prompt\n"
@@ -184,10 +231,11 @@ def main() -> None:
         complete_while_typing=True,
         style=PROMPT_STYLE,
     )
+    steer_session = PromptSession()
 
     while True:
         try:
-            user_input = session.prompt(HTML("<b><ansigreen>❯</ansigreen></b> ")).strip()
+            user_input = session.prompt(HTML("<b><ansicyan>❯</ansicyan></b> ")).strip()
         except KeyboardInterrupt:
             continue
         except EOFError:
@@ -216,7 +264,7 @@ def main() -> None:
                 provider["active_model"] = chosen
                 cfg["providers"][provider["name"]] = provider
                 save_config(cfg)
-                console.print(f"[green]✓[/green] Model: [bright_green]{chosen}[/bright_green]\n")
+                console.print(f"[green]✓[/green] Model: [bright_cyan]{chosen}[/bright_cyan]\n")
             continue
 
         if user_input == "/provider":
@@ -229,7 +277,7 @@ def main() -> None:
             continue
 
         messages.append({"role": "user", "content": user_input})
-        _run_turn(console, provider, messages)
+        _run_turn(console, provider, messages, steer_session=steer_session)
 
 
 if __name__ == "__main__":
