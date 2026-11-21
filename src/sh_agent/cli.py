@@ -6,36 +6,35 @@ from typing import Any
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
-from rich.console import Console
 
 from . import __version__
 from .client import stream_chat
 from .config import get_active_provider, load_config, save_config
+from .pricing import estimate_cost
 from .shell import SYSTEM_PROMPT, parse_bash_action, run_bash
-from .ui import (
+from .tui import (
+    CYAN,
+    DARK,
+    GRAY,
+    GREEN,
     PROMPT_STYLE,
+    RED,
+    YELLOW,
     EscInterruptWatcher,
+    R,
     SlashCompleter,
+    Spinner,
     pick_model,
     print_banner,
-    render_action_line,
+    render_action,
+    render_stats,
     run_onboarding,
 )
+from .updater import check_latest_version, self_update
 
 
-def _format_stats(ttft_ms: int, prompt_tok: int, cached_tok: int, comp_tok: int) -> str:
-    parts = [f"{ttft_ms}ms TTFT"]
-    if prompt_tok > 0:
-        pct = int(round((cached_tok / prompt_tok) * 100)) if cached_tok > 0 else 0
-        parts.append(f"{prompt_tok:,} in ({pct}% cached)")
-    if comp_tok > 0:
-        parts.append(f"{comp_tok:,} out")
-    return "  " + " · ".join(parts)
-
-
-def _ask_supplement(console: Console, steer_session: PromptSession) -> str | None:
-    """Prompt inline after an interrupt: typing supplements & continues, empty Enter stops."""
-    console.print("[dim]│[/dim] [yellow]⏸ Прервано (история сохранена)[/yellow]")
+def _ask_supplement(steer_session: PromptSession) -> str | None:
+    print(f"{DARK}│{R} {YELLOW}⏸ Прервано (история сохранена){R}")
     try:
         text = steer_session.prompt(
             HTML("<b><ansiyellow>↳ Дополнить</ansiyellow></b> <ansibrightblack>(Enter — стоп)</ansibrightblack>: ")
@@ -46,9 +45,9 @@ def _ask_supplement(console: Console, steer_session: PromptSession) -> str | Non
 
 
 def _run_turn(
-    console: Console,
     provider: dict[str, Any],
     messages: list[dict[str, Any]],
+    session_state: dict[str, float],
     steer_session: PromptSession | None = None,
 ) -> None:
     model = provider["active_model"]
@@ -62,13 +61,12 @@ def _run_turn(
 
     while True:
         short_model = model.split("/")[-1] if "/" in model else model
-        think_msg = f"Thinking · {short_model}"[: max(12, console.width - 6)]
-        status = console.status(f"[cyan]{think_msg}[/cyan]", spinner="dots")
-        status.start()
+        spin = Spinner(f"Thinking · {short_model}", CYAN)
+        spin.start()
         streamed_any_text = False
 
         def on_first() -> None:
-            status.stop()
+            spin.stop()
 
         def on_token(delta: str) -> None:
             nonlocal streamed_any_text
@@ -94,28 +92,27 @@ def _run_turn(
         except KeyboardInterrupt:
             interrupted = True
         except Exception as e:
-            status.stop()
-            console.print(f"\n[red]✗ API error:[/red] {e}\n")
+            spin.stop()
+            print(f"\n{RED}✗ API error:{R} {e}\n")
             return
         finally:
-            status.stop()
+            spin.stop()
 
         if streamed_any_text:
             sys.stdout.write("\n")
             sys.stdout.flush()
 
         if interrupted or (res is not None and res.cancelled):
-            # Preserve any partial assistant text already streamed so the chain stays coherent
             if res is not None and res.content.strip():
                 messages.append({"role": "assistant", "content": res.content})
             if steer_session is None:
-                console.print("[yellow]⏸ Прервано[/yellow]\n")
+                print(f"{YELLOW}⏸ Прервано{R}\n")
                 return
-            supplement = _ask_supplement(console, steer_session)
+            supplement = _ask_supplement(steer_session)
             if supplement:
                 messages.append({"role": "user", "content": supplement})
                 continue
-            console.print()
+            print()
             return
 
         assert res is not None
@@ -144,16 +141,11 @@ def _run_turn(
             cmd = str(args.get("command", ""))
             parsed = parse_bash_action(cmd)
 
-            spin_txt = f"{parsed.kind} · {parsed.target}"
-            max_spin = max(16, console.width - 6)
-            if len(spin_txt) > max_spin:
-                spin_txt = spin_txt[: max_spin - 1] + "…"
-
             with EscInterruptWatcher():
-                with console.status(f"[dim]{spin_txt}[/dim]", spinner="dots"):
+                with Spinner(f"{parsed.kind} · {parsed.target}", GRAY):
                     b_res = run_bash(cmd)
 
-            render_action_line(console, parsed, b_res)
+            render_action(parsed, b_res)
 
             messages.append(
                 {
@@ -164,7 +156,6 @@ def _run_turn(
             )
 
             if b_res.cancelled:
-                # Keep OpenAI tool_call chain valid for any remaining unexecuted tool_calls
                 for rem_idx, rem_tc in enumerate(res.tool_calls[idx + 1 :], start=idx + 1):
                     messages.append(
                         {
@@ -178,53 +169,69 @@ def _run_turn(
 
         if cancelled_mid_tools:
             if steer_session is None:
-                console.print("[yellow]⏸ Прервано[/yellow]\n")
+                print(f"{YELLOW}⏸ Прервано{R}\n")
                 return
-            supplement = _ask_supplement(console, steer_session)
+            supplement = _ask_supplement(steer_session)
             if supplement:
                 messages.append({"role": "user", "content": supplement})
                 continue
-            console.print()
+            print()
             return
 
-    console.print(f"[dim]{_format_stats(first_ttft, total_prompt, total_cached, total_comp)}[/dim]\n")
+    turn_cost, _ = estimate_cost(model, total_prompt, total_cached, total_comp)
+    session_state["cost"] += turn_cost
+    render_stats(first_ttft, total_prompt, total_cached, total_comp, turn_cost, session_state["cost"])
+
+
+def _run_update() -> None:
+    with Spinner("Updating sh-agent from GitHub...", CYAN):
+        ok, msg = self_update()
+    if ok:
+        print(f"{GREEN}✓{R} {msg}\n")
+    else:
+        print(f"{RED}✗ Update failed:{R} {msg}\n")
 
 
 def main() -> None:
-    console = Console()
-
     if len(sys.argv) == 2 and sys.argv[1] in ("-h", "--help"):
-        console.print(
-            "[bold bright_cyan]shx[/bold bright_cyan] — bash-only ultra-economical AI agent\n\n"
-            "[bold]Usage:[/bold]\n"
+        print(
+            f"{CYAN}shx{R} v{__version__} — bash-only ultra-economical AI agent\n\n"
+            "Usage:\n"
             "  shx             Launch interactive agent\n"
             "  shx \"<prompt>\"  Run one-shot prompt\n"
+            "  shx --update    Update to latest version\n"
             "  shx --version   Show version\n\n"
-            "[bold]Slash commands:[/bold] /model, /new, /provider, /exit"
+            "Slash commands: /model, /new, /provider, /update, /exit"
         )
         return
 
     if len(sys.argv) == 2 and sys.argv[1] in ("-v", "--version"):
-        console.print(f"sh-agent {__version__}")
+        print(f"sh-agent {__version__}")
+        return
+
+    if len(sys.argv) == 2 and sys.argv[1] == "--update":
+        _run_update()
         return
 
     cfg = load_config()
     provider = get_active_provider(cfg)
 
     if provider is None:
-        print_banner(console)
-        provider = run_onboarding(console, cfg)
+        print_banner()
+        provider = run_onboarding(cfg)
 
     messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    session_state = {"cost": 0.0}
 
     if len(sys.argv) > 1:
         prompt_text = " ".join(sys.argv[1:]).strip()
         if prompt_text:
             messages.append({"role": "user", "content": prompt_text})
-            _run_turn(console, provider, messages)
+            _run_turn(provider, messages, session_state)
             return
 
-    print_banner(console, provider["name"], provider["active_model"])
+    update_ver = check_latest_version()
+    print_banner(provider["name"], provider["active_model"], update_ver=update_ver)
 
     session = PromptSession(
         completer=SlashCompleter(),
@@ -239,45 +246,50 @@ def main() -> None:
         except KeyboardInterrupt:
             continue
         except EOFError:
-            console.print("\n[dim]bye[/dim]")
+            print(f"\n{GRAY}bye{R}")
             break
 
         if not user_input:
             continue
 
         if user_input == "/exit":
-            console.print("[dim]bye[/dim]")
+            print(f"{GRAY}bye{R}")
             break
 
         if user_input == "/new":
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-            console.print("[green]✓[/green] [dim]New chat (context cleared)[/dim]\n")
+            session_state["cost"] = 0.0
+            print(f"{GREEN}✓{R} {GRAY}New chat (context & cost reset){R}\n")
+            continue
+
+        if user_input == "/update":
+            _run_update()
             continue
 
         if user_input == "/model":
             models = provider.get("models") or []
             if not models:
-                console.print("[yellow]No synced models. Run /provider to re-sync.[/yellow]\n")
+                print(f"{YELLOW}No synced models. Run /provider to re-sync.{R}\n")
                 continue
             chosen = pick_model(models, provider.get("active_model", ""))
             if chosen and chosen != provider.get("active_model"):
                 provider["active_model"] = chosen
                 cfg["providers"][provider["name"]] = provider
                 save_config(cfg)
-                console.print(f"[green]✓[/green] Model: [bright_cyan]{chosen}[/bright_cyan]\n")
+                print(f"{GREEN}✓{R} Model: {CYAN}{chosen}{R}\n")
             continue
 
         if user_input == "/provider":
-            provider = run_onboarding(console, cfg)
-            print_banner(console, provider["name"], provider["active_model"])
+            provider = run_onboarding(cfg)
+            print_banner(provider["name"], provider["active_model"])
             continue
 
         if user_input.startswith("/"):
-            console.print("[dim]Commands: /model, /new, /provider, /exit[/dim]\n")
+            print(f"{GRAY}Commands: /model, /new, /provider, /update, /exit{R}\n")
             continue
 
         messages.append({"role": "user", "content": user_input})
-        _run_turn(console, provider, messages, steer_session=steer_session)
+        _run_turn(provider, messages, session_state, steer_session=steer_session)
 
 
 if __name__ == "__main__":

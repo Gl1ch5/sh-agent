@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="420" viewBox="0 0 760 420">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#11111b"/>
+      <stop offset="100%" stop-color="#181825"/>
+    </linearGradient>
+  </defs>
+  <rect width="760" height="420" rx="14" fill="url(#bg)" stroke="#313244" stroke-width="1.5"/>
+  <!-- Window controls -->
+  <circle cx="24" cy="22" r="6" fill="#f38ba8"/>
+  <circle cx="44" cy="22" r="6" fill="#f9e2af"/>
+  <circle cx="64" cy="22" r="6" fill="#a6e3a1"/>
+  <text x="380" y="26" fill="#6c7086" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" text-anchor="middle">shx v0.2.0 — ~/my-project</text>
+  <line x1="0" y1="40" x2="760" y2="40" stroke="#313244" stroke-width="1"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13.5">
+    <!-- HUD Box -->
+    <text x="22" y="68" fill="#45475a">╭─ </text>
+    <text x="46" y="68" fill="#89dceb" font-weight="bold">⚡ shx</text>
+    <text x="102" y="68" fill="#6c7086">v0.2.0</text>
+    <text x="158" y="68" fill="#45475a">──────────────────────────────────────────────╮</text>
+
+    <text x="22" y="88" fill="#45475a">│ </text>
+    <text x="38" y="88" fill="#cdd6f4">deepseek-v4.1-flash-1017 · bailian</text>
+    <text x="614" y="88" fill="#45475a">│</text>
+
+    <text x="22" y="108" fill="#45475a">│ </text>
+    <text x="38" y="108" fill="#a6e3a1">✓ up to date · / cmds · Esc/Ctrl+C стоп</text>
+    <text x="614" y="108" fill="#45475a">│</text>
+
+    <text x="22" y="128" fill="#45475a">╰────────────────────────────────────────────────────────────╯</text>
+
+    <!-- User Prompt -->
+    <text x="22" y="160" fill="#89dceb" font-weight="bold">❯</text>
+    <text x="38" y="160" fill="#cdd6f4">check tests and fix the typo in app.py</text>
+
+    <!-- Action 1: bash -->
+    <text x="22" y="190" fill="#45475a">│</text>
+    <text x="38" y="190" fill="#a6e3a1">✓</text>
+    <text x="54" y="190" fill="#89b4fa" font-weight="bold">bash</text>
+    <text x="94" y="190" fill="#6c7086">· 410ms</text>
+    <text x="22" y="210" fill="#45475a">│</text>
+    <text x="46" y="210" fill="#6c7086">pytest -q</text>
+
+    <!-- Action 2: read -->
+    <text x="22" y="236" fill="#45475a">│</text>
+    <text x="38" y="236" fill="#a6e3a1">✓</text>
+    <text x="54" y="236" fill="#89dceb" font-weight="bold">read</text>
+    <text x="94" y="236" fill="#6c7086">· 28L · 12ms</text>
+    <text x="22" y="256" fill="#45475a">│</text>
+    <text x="46" y="256" fill="#6c7086">src/app.py</text>
+
+    <!-- Action 3: write -->
+    <text x="22" y="282" fill="#45475a">│</text>
+    <text x="38" y="282" fill="#a6e3a1">✓</text>
+    <text x="54" y="282" fill="#a6e3a1" font-weight="bold">write</text>
+    <text x="102" y="282" fill="#6c7086">· ~28L · 15ms</text>
+    <text x="22" y="302" fill="#45475a">│</text>
+    <text x="46" y="302" fill="#6c7086">src/app.py</text>
+
+    <!-- Assistant reply -->
+    <text x="22" y="334" fill="#cdd6f4">Fixed typo in src/app.py:14; pytest passes (4/4).</text>
+
+    <!-- Telemetry & Cost HUD -->
+    <text x="22" y="364" fill="#45475a">╰─</text>
+    <text x="46" y="364" fill="#6c7086">210ms · 1,420 in (93% cached) · 24 out · </text>
+    <text x="394" y="364" fill="#a6e3a1">$0.00003</text>
+    <text x="464" y="364" fill="#6c7086">(Σ $0.00012)</text>
+
+    <!-- Next prompt -->
+    <text x="22" y="396" fill="#89dceb" font-weight="bold">❯</text>
+    <rect x="38" y="383" width="8" height="16" fill="#89dceb" opacity="0.8"/>
+  </g>
+</svg>

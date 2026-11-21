@@ -9,34 +9,27 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-# Static, ultra-compact system prompt (~55 tokens) — immutable prefix for max cache hit rate.
-SYSTEM_PROMPT = (
-    "You are shx, an ultra-fast, token-economical CLI agent with one tool: bash.\n"
-    "Rules:\n"
-    "- Act immediately via bash without preamble.\n"
-    "- Keep commands concise; avoid noisy output (use head/tail/grep flags).\n"
-    "- Reply in 1-3 short lines. No filler, no restating the request."
-)
+# Ultra-minimal static system prompt (~28 tokens) — immutable prefix for max cache hit rate.
+SYSTEM_PROMPT = "shx: fast CLI agent (tool: bash). Run concise cmds; reply in 1-2 lines; no filler."
 
-# Single tool schema (~60 tokens) — immutable prefix for max cache hit rate.
+# Minimal single tool schema (~42 tokens) — immutable prefix for max cache hit rate.
 TOOLS_SCHEMA: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
             "name": "bash",
-            "description": "Run a shell command (bash on POSIX, PowerShell on Windows).",
+            "description": "Run shell cmd",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "Shell command to execute"},
-                },
+                "properties": {"command": {"type": "string"}},
                 "required": ["command"],
             },
         },
     }
 ]
 
-MAX_OUTPUT_CHARS = 8_000
+MAX_OUTPUT_CHARS = 6_000
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 @dataclass
@@ -130,12 +123,18 @@ def parse_bash_action(command: str) -> ParsedAction:
 
 
 def _truncate_output(text: str) -> str:
+    # Token economy: strip ANSI color codes, trailing spaces, and excessive blank lines
+    text = _ANSI_RE.sub("", text)
+    text = "\n".join(ln.rstrip() for ln in text.splitlines())
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    if not text:
+        return "(no output)"
     if len(text) <= MAX_OUTPUT_CHARS:
         return text
-    head = text[:5000]
-    tail = text[-2500:]
+    head = text[:3800]
+    tail = text[-1800:]
     omitted = len(text) - len(head) - len(tail)
-    return f"{head}\n\n... [{omitted} chars omitted for token economy] ...\n\n{tail}"
+    return f"{head}\n\n... [{omitted} chars omitted] ...\n\n{tail}"
 
 
 def _build_shell_argv(command: str) -> list[str]:

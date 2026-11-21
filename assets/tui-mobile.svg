@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="440" viewBox="0 0 420 440">
+  <defs>
+    <linearGradient id="mbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0d0e15"/>
+      <stop offset="100%" stop-color="#141521"/>
+    </linearGradient>
+  </defs>
+  <rect width="420" height="440" rx="22" fill="url(#mbg)" stroke="#313244" stroke-width="2"/>
+  <rect x="160" y="12" width="100" height="5" rx="2.5" fill="#313244"/>
+  <text x="210" y="38" fill="#6c7086" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11" text-anchor="middle">Termux · Android</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12.5">
+    <text x="18" y="68" fill="#45475a">╭─ </text>
+    <text x="40" y="68" fill="#89dceb" font-weight="bold">⚡ shx</text>
+    <text x="90" y="68" fill="#6c7086">v0.2.0</text>
+    <text x="142" y="68" fill="#45475a">────────────────────╮</text>
+
+    <text x="18" y="88" fill="#45475a">│ </text>
+    <text x="32" y="88" fill="#cdd6f4">deepseek-v4.1-flash-1017 · bailian</text>
+    <text x="392" y="88" fill="#45475a">│</text>
+
+    <text x="18" y="108" fill="#45475a">│ </text>
+    <text x="32" y="108" fill="#6c7086">~ · / cmds · Esc/Ctrl+C стоп</text>
+    <text x="392" y="108" fill="#45475a">│</text>
+
+    <text x="18" y="128" fill="#45475a">╰──────────────────────────────────╯</text>
+
+    <text x="18" y="160" fill="#89dceb" font-weight="bold">❯</text>
+    <text x="32" y="160" fill="#cdd6f4">проверь активные процессы</text>
+
+    <text x="18" y="190" fill="#45475a">│</text>
+    <text x="32" y="190" fill="#a6e3a1">✓</text>
+    <text x="46" y="190" fill="#89b4fa" font-weight="bold">bash</text>
+    <text x="82" y="190" fill="#6c7086">· 3.2s</text>
+    <text x="18" y="210" fill="#45475a">│</text>
+    <text x="40" y="210" fill="#6c7086">su -c "dumpsys activity | grep…</text>
+
+    <text x="18" y="236" fill="#45475a">│</text>
+    <text x="32" y="236" fill="#f38ba8">✗</text>
+    <text x="46" y="236" fill="#89b4fa" font-weight="bold">bash</text>
+    <text x="82" y="236" fill="#f38ba8">exit 2</text>
+    <text x="132" y="236" fill="#6c7086">· 120ms</text>
+    <text x="18" y="256" fill="#45475a">│</text>
+    <text x="40" y="256" fill="#6c7086">su -c "dumpsys package | grep…</text>
+    <text x="18" y="274" fill="#45475a">│</text>
+    <text x="40" y="274" fill="#f38ba8">↳ Permission denied: dumpsys</text>
+
+    <!-- Interrupt & supplement -->
+    <text x="18" y="304" fill="#45475a">│</text>
+    <text x="32" y="304" fill="#f9e2af">⏸ Прервано (история сохранена)</text>
+    <text x="18" y="326" fill="#f9e2af" font-weight="bold">↳ Дополнить</text>
+    <text x="108" y="326" fill="#6c7086">(Enter — стоп):</text>
+    <text x="234" y="326" fill="#cdd6f4">pidof</text>
+
+    <text x="18" y="358" fill="#45475a">│</text>
+    <text x="32" y="358" fill="#a6e3a1">✓</text>
+    <text x="46" y="358" fill="#89b4fa" font-weight="bold">bash</text>
+    <text x="82" y="358" fill="#6c7086">· 48ms</text>
+    <text x="18" y="378" fill="#45475a">│</text>
+    <text x="40" y="378" fill="#6c7086">su -c "pidof ru.sberbankmobile"</text>
+
+    <text x="18" y="410" fill="#45475a">╰─</text>
+    <text x="40" y="410" fill="#6c7086">190ms · 940 in (91% cached) · </text>
+    <text x="272" y="410" fill="#a6e3a1">$0.00001</text>
+  </g>
+</svg>

@@ -12,11 +12,16 @@
 # `sh-agent` (`shx`)
 
 **Bash-only, ultra-economical AI agent.**  
-One tool (`bash`). Smart command parsing. **Maximum prompt-cache hit rate.** Instant `Ctrl+C` cancellation.
+~70 tokens fixed prefix · Custom Python ANSI TUI · Live OpenRouter cost tracking · Instant `Esc`/`Ctrl+C` steer · Auto-update.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Python 3.9+](https://img.shields.io/badge/Python-3.9+-blue.svg)](https://www.python.org/)
-[![Tool: bash only](https://img.shields.io/badge/Tool-bash%20only-brightgreen.svg)](#architecture)
+[![Version](https://img.shields.io/badge/version-0.2.0-89dceb.svg)](version.json)
+[![License: MIT](https://img.shields.io/badge/License-MIT-a6e3a1.svg)](LICENSE)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9+-89b4fa.svg)](https://www.python.org/)
+[![Prefix](https://img.shields.io/badge/Fixed%20Prefix-~70%20tokens-fab387.svg)](#token-economy--live-pricing)
+
+<br/>
+
+<img src="assets/tui-desktop.svg" alt="shx Desktop TUI" width="720"/>
 
 </div>
 
@@ -43,6 +48,28 @@ uv tool install git+https://github.com/Gl1ch5/sh-agent.git
 
 ---
 
+## Mobile / Termux Preview
+
+Designed from the ground up for narrow screens — **zero mid-word wrapping**, non-wrapping braille spinners, and **1-tap `Esc` interrupt + inline supplement**:
+
+<div align="center">
+  <img src="assets/tui-mobile.svg" alt="shx Termux Mobile TUI" width="380"/>
+</div>
+
+---
+
+## Token Economy & Live Pricing
+
+| Optimization | How it works |
+| :--- | :--- |
+| **~70-token fixed prefix** | Ultra-short static system prompt (~28 tok) + single `bash` schema (~42 tok). |
+| **Max KV / prefix cache** | System prompt & tool schema never mutate; history is strictly append-only. |
+| **ANSI & whitespace strip** | Strips ANSI color codes, trailing spaces, and blank-line bloat from `bash` output before sending to the LLM. |
+| **6,000-char smart cap** | Head (3.8k) + tail (1.8k) truncation prevents noisy logs from flooding context. |
+| **OpenRouter `pricing.json`** | Bundled price table for **362 models** from OpenRouter. Fuzzy-matches any custom provider model name (e.g. `bailian/deepseek-v4.1-flash-1017` → `deepseek/deepseek-v4.1-flash`) and shows exact turn & session spend (`$0.00003 (Σ $0.00012)`). |
+
+---
+
 ## First Launch
 
 ```bash
@@ -57,31 +84,26 @@ shx
 
 ---
 
-## Smart Command Parsing
+## Interrupt & Supplement (`Esc` / `Ctrl+C`)
 
-Long shell commands and heredocs are parsed automatically into compact, readable action badges:
-
-```
-✎ write  src/app.py       (~24L · 18ms)     ✓ 0
-◉ read   pyproject.toml   (22L · 9ms)       ✓ 0
-⌕ grep   "TODO" src/      (4L · 14ms)       ✓ 0
-⚡ bash   pytest -q        (310ms)           ✓ 0
-```
-
-- **Token Economy** — ~115 tokens total for system prompt + `bash` schema. Noisy command output is head+tail capped at 8,000 chars so logs never blow up your context.
-- **High Cache Hit-Rate** — 100% static prefix (`system` + `tools`) and append-only history, with live cache telemetry (`▸ 240ms TTFT · 980 in (94% cached) · 42 out`).
-- **Instant Cancellation** — press `Ctrl+C` anytime during streaming or while a command is running to abort cleanly and roll back the turn.
+Press `Esc` or `Ctrl+C` at any moment (while thinking, streaming, or running a command):
+- Stops the stream or kills the subprocess tree immediately.
+- **Preserves the full conversation & tool-call chain** (patches any unexecuted `tool_calls` with `[interrupted by user]` so the API history stays 100% valid).
+- Prompts `↳ Дополнить (Enter — стоп):` — type a correction to steer immediately, or press `Enter` to stop.
 
 ---
 
-## Slash Commands
+## Slash Commands & Auto-Update
 
 | Command | Action |
 | :--- | :--- |
 | `/model` | Interactive fuzzy-filter model picker |
-| `/new` | New chat (clears context, keeps static prefix warm) |
+| `/new` | New chat (clears context & session cost) |
 | `/provider` | Add or reconfigure custom OpenAI-compatible provider |
+| `/update` | Self-update to latest version from GitHub (`shx --update`) |
 | `/exit` | Quit `shx` |
+
+`shx` checks `version.json` on startup (1.5s timeout, no GitHub API rate limits) and notifies you in the HUD if a newer version is available.
 
 ---
 
@@ -89,11 +111,14 @@ Long shell commands and heredocs are parsed automatically into compact, readable
 
 ```
 src/sh_agent/
-├── cli.py      # REPL loop, streaming, Ctrl+C rollback, telemetry
-├── client.py   # SSE streaming client + cache-hit & TTFT tracking
-├── config.py   # ~/.sh-agent/config.json + /models auto-sync
-├── shell.py    # Cross-platform bash/PowerShell runner + smart action parser
-└── ui.py       # Neon TUI theme, onboarding wizard, / completer, model picker
+├── cli.py         # Minimal REPL, Esc/Ctrl+C steer loop, version check
+├── client.py      # SSE streaming client + cache-hit & TTFT tracking
+├── config.py      # ~/.sh-agent/config.json + /models auto-sync
+├── pricing.py     # Fuzzy model matcher + turn/session USD calculator
+├── pricing.json   # 362 real model prices from OpenRouter (15 KB)
+├── shell.py       # Cross-platform runner + ANSI stripper + smart parser
+├── tui.py         # Custom Python ANSI/VT100 TUI engine (zero Rich bloat)
+└── updater.py     # version.json checker + self-updater
 ```
 
 ---
